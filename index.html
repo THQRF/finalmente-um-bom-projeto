@@ -22,32 +22,35 @@
         #scoreboard { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.6); padding: 15px; border-radius: 8px; min-width: 150px; z-index: 5; border: 1px solid #444; }
         #minimap { position: absolute; bottom: 20px; right: 20px; width: 150px; height: 150px; background: rgba(0,0,0,0.7); border: 2px solid #555; border-radius: 4px; z-index: 5; }
         
+        #btn-quit { position: absolute; bottom: 20px; left: 20px; padding: 10px 20px; background: #c0392b; color: white; border: none; border-radius: 5px; cursor: pointer; z-index: 100; display: none; }
         .save-badge { font-size: 10px; color: #2ecc71; display: none; margin-top: 5px; }
         .hidden { display: none !important; }
+        .pvp-warn { color: #f1c40f; font-size: 10px; margin-top: -10px; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
-<div id="hud">
+<button id="btn-quit" onclick="location.reload()">SAIR DA ARENA</button>
+
+<div id="hud" class="hidden">
     <div id="status-hp" style="color: #ff4757; font-size: 28px; font-weight: bold;">Vida: 100%</div>
     <div id="status-xp" style="color: #f1c40f; font-size: 18px;">Nível 1 (0/100 XP)</div>
     <div id="stats-panel">Dano: 20 | Vel: 5.0</div>
-    <div id="status-skill" style="color: #2ecc71; font-size: 18px;">Habilidade: Pronta [M2]</div>
+    <div id="status-skill" style="color: #2ecc71; font-size: 18px;">Habilidade: [M2] | Espadada: [R]</div>
     <div id="save-notification" class="save-badge">✓ PROGRESSO SALVO</div>
 </div>
 
-<div id="scoreboard">
+<div id="scoreboard" class="hidden">
     <div style="color: #2ecc71; font-weight: bold; margin-bottom: 5px;">PLACAR</div>
     <div id="score-me">Você: 0</div>
     <div id="score-enemy">Inimigos: 0</div>
 </div>
 
-<canvas id="minimap"></canvas>
+<canvas id="minimap" class="hidden"></canvas>
 
 <div id="ui-overlay">
     <div id="main-menu" class="menu">
         <h1 style="color:#2ecc71; margin-top:0;">BATTLE ARENA PRO</h1>
-        
         <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 10px; margin-bottom: 15px;">
             <p style="margin: 0 0 10px 0; font-size: 13px;">Gerenciar Dados (.txt)</p>
             <div style="display: flex; gap: 5px;">
@@ -55,9 +58,7 @@
                 <button onclick="importCharacter()" style="font-size: 10px; background: #34495e;">Importar Backup</button>
             </div>
         </div>
-
         <input type="text" id="nickname" placeholder="Nome do Jogador" maxlength="10">
-        
         <p>Habilidade Especial:</p>
         <div class="skill-box">
             <div class="skill-btn" id="btn-speed" onclick="selectSkill('speed', this)">Velocidade++</div>
@@ -66,20 +67,18 @@
             <div class="skill-btn" id="btn-rapid" onclick="selectSkill('rapid', this)">Tiro Rápido</div>
             <div class="skill-btn" id="btn-ghost" onclick="selectSkill('ghost', this)">Invisibilidade</div>
         </div>
-
         <input type="color" id="playerColor" value="#e74c3c" style="height: 40px; padding: 2px;">
         <button onclick="showLobby()">INICIAR ARENA</button>
     </div>
-
     <div id="lobby-menu" class="menu hidden">
         <h2>MODO DE JOGO</h2>
         <button onclick="startOffline()" style="background:#8e44ad">Treinamento Offline (Bots)</button>
         <hr style="border: 0; border-top: 1px solid #444; margin: 20px 0;">
+        <p class="pvp-warn">No PvP, todos os jogadores tem atributos iguais!</p>
         <button onclick="startHost()">Criar Sala (Host)</button>
         <button onclick="showJoin()" style="background:#2980b9">Entrar em Sala</button>
         <button onclick="backToMain()" style="background:#7f8c8d; font-size: 10px;">Voltar</button>
     </div>
-
     <div id="host-setup" class="menu hidden">
         <p>1. Envie este código ao amigo:</p>
         <textarea id="offer-token" readonly onclick="this.select()"></textarea>
@@ -87,7 +86,6 @@
         <textarea id="answer-token" placeholder="Cole a resposta aqui..."></textarea>
         <button onclick="confirmHost()">CONECTAR AGORA</button>
     </div>
-
     <div id="join-setup" class="menu hidden">
         <p>1. Cole o código do Host:</p>
         <textarea id="join-offer" placeholder="Cole o código aqui..." oninput="autoGenerateAnswer()"></textarea>
@@ -99,48 +97,66 @@
 <canvas id="gameCanvas"></canvas>
 
 <script>
-/** CONFIGURAÇÕES E ESTADO **/
+/** SISTEMA DE SOM **/
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSound(freq, type, duration, vol) {
+    try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+    } catch(e) {}
+}
+
+const SFX = {
+    shoot: () => playSound(440, 'triangle', 0.1, 0.1),
+    hit: () => playSound(150, 'sawtooth', 0.2, 0.2),
+    levelUp: () => { playSound(523, 'sine', 0.5, 0.2); setTimeout(()=>playSound(659, 'sine', 0.5, 0.2), 100); },
+    skill: () => playSound(880, 'sine', 0.3, 0.1),
+    heal: () => playSound(600, 'sine', 0.4, 0.2),
+    sword: () => playSound(200, 'sawtooth', 0.3, 0.3)
+};
+
+/** CONFIGURAÇÕES **/
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const miniCanvas = document.getElementById('minimap');
 const mctx = miniCanvas.getContext('2d');
 
-const WORLD = { width: 3000, height: 3000 };
+const WORLD = { width: 3500, height: 3500 };
 let camera = { x: 0, y: 0 };
 let isOffline = false;
+let gameRunning = false;
 
-// Atributos base do jogador
 let player = {
-    x: 1500, y: 1500, size: 22, color: '#e74c3c', name: '', 
+    x: 1750, y: 1750, size: 22, color: '#e74c3c', name: '', 
     hp: 100, maxHp: 100, score: 0, skill: 'speed', skillCD: 0,
     invisible: false, lastFire: 0, fireRate: 400,
-    xp: 0, level: 1, 
-    baseSpeed: 5, damage: 20,
-    bulletSpeed: 12
+    xp: 0, level: 1, baseSpeed: 5, damage: 20, bulletSpeed: 12,
+    swordCD: 0, swordActive: 0
 };
 
 let bots = [];
-let opponent = { x: -2000, y: -2000, size: 22, hp: 100, maxHp: 100, score: 0, invisible: false, name: 'Inimigo', color: '#3498db' };
+let opponent = { x: -5000, y: -5000, size: 22, hp: 100, maxHp: 100, score: 0, invisible: false, name: 'Inimigo', color: '#3498db', swordActive: 0 };
 let projectiles = [];
 let obstacles = [];
+let items = [];
 let keys = {};
 let mousePos = { x: 0, y: 0 };
 
-/** SISTEMA DE SALVAMENTO MELHORADO **/
-// O jogo salva automaticamente no LocalStorage para persistência rápida
-// e permite exportar o TXT para segurança.
-
+/** SISTEMA DE SALVAMENTO **/
 function saveToStorage() {
+    if(!isOffline) return; // Não salva progresso em PVP Arena
     const saveData = {
-        name: player.name,
-        color: player.color,
-        skill: player.skill,
-        xp: player.xp,
-        level: player.level,
-        score: player.score,
-        maxHp: player.maxHp,
-        damage: player.damage,
-        baseSpeed: player.baseSpeed
+        name: player.name, color: player.color, skill: player.skill,
+        xp: player.xp, level: player.level, score: player.score,
+        maxHp: player.maxHp, damage: player.damage, baseSpeed: player.baseSpeed
     };
     localStorage.setItem('battle_arena_save', JSON.stringify(saveData));
     showSaveBadge();
@@ -162,70 +178,98 @@ function loadFromStorage() {
 
 function showSaveBadge() {
     const badge = document.getElementById('save-notification');
-    badge.style.display = 'block';
-    setTimeout(() => badge.style.display = 'none', 2000);
+    if(badge) {
+        badge.style.display = 'block';
+        setTimeout(() => badge.style.display = 'none', 2000);
+    }
 }
 
-function exportCharacter() {
-    const data = localStorage.getItem('battle_arena_save') || JSON.stringify(player);
-    const blob = new Blob([data], {type: 'text/plain'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `ArenaPlayer_${player.name || 'Hero'}_Lvl${player.level}.txt`;
-    a.click();
+/** MECÂNICAS NOVAS **/
+
+function spawnItems() {
+    for(let i=0; i<15; i++) {
+        items.push({
+            x: Math.random() * WORLD.width,
+            y: Math.random() * WORLD.height,
+            type: 'heal',
+            val: 40
+        });
+    }
 }
 
-function importCharacter() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.txt';
-    input.onchange = e => {
-        const file = e.target.files[0];
-        const reader = new FileReader();
-        reader.onload = event => {
-            try {
-                const data = JSON.parse(event.target.result);
-                localStorage.setItem('battle_arena_save', JSON.stringify(data));
-                location.reload(); // Recarrega para aplicar
-            } catch(err) { alert("Arquivo de save inválido!"); }
-        };
-        reader.readAsText(file);
-    };
-    input.click();
+function swordAttack() {
+    if(player.swordCD > 0 || player.hp <= 0) return;
+    player.swordCD = 120; // 2 segundos
+    player.swordActive = 20; // Duração visual/dano
+    SFX.sword();
+    
+    // Área de dano da espada (360 graus em volta do player)
+    const range = 100;
+    const dmg = isOffline ? player.damage * 2.5 : 50;
+
+    if(isOffline) {
+        bots.forEach(bot => {
+            if(Math.hypot(player.x - bot.x, player.y - bot.y) < range) {
+                bot.hp -= dmg;
+                SFX.hit();
+                if(bot.hp <= 0) { player.score++; addXP(45); }
+            }
+        });
+    } else {
+        if(Math.hypot(player.x - opponent.x, player.y - opponent.y) < range) {
+            sendData({ type: 'hit', damage: dmg, method: 'sword' });
+        }
+    }
+    sendData({ type: 'sword' });
 }
 
-/** PROGRESSÃO DE PODER **/
+/** PROGRESSÃO **/
 function addXP(amount) {
+    if(!isOffline) return; 
     player.xp += amount;
     let nextLevelXp = player.level * 100;
-    
     if(player.xp >= nextLevelXp) {
         player.xp -= nextLevelXp;
         player.level++;
-        
-        // Aumento de Atributos ao subir de nível
         player.maxHp += 15;
         player.hp = player.maxHp;
-        player.damage += 5; // Fica mais forte
-        player.baseSpeed += 0.2; // Fica mais rápido
-        
-        saveToStorage(); // Auto-save no level up
-        alert(`LEVEL UP! Nível ${player.level}\n+15 HP Max\n+5 Dano\n+Velocidade`);
+        player.damage += 5;
+        player.baseSpeed += 0.2;
+        SFX.levelUp();
+        saveToStorage();
     }
 }
 
-/** LÓGICA DO JOGO **/
+/** LÓGICA PRINCIPAL **/
 function initGame() {
-    // Aplicar bônus de classe (acumulativos aos atributos de nível)
-    if(player.skill === 'tank') { player.maxHp += 100; player.hp = player.maxHp; player.baseSpeed -= 1; }
-    if(player.skill === 'speed') { player.baseSpeed += 2; }
-    if(player.skill === 'rapid') { player.fireRate = 180; }
-
+    gameRunning = true;
     generateMap();
-    if(isOffline) {
-        for(let i=0; i<6; i++) spawnBot();
+    spawnItems();
+    
+    document.getElementById('btn-quit').style.display = 'block';
+    document.getElementById('hud').classList.remove('hidden');
+    document.getElementById('scoreboard').classList.remove('hidden');
+    document.getElementById('minimap').classList.remove('hidden');
+
+    if(!isOffline) {
+        // Resetar para Atributos Base no PVP
+        player.maxHp = 200;
+        player.hp = 200;
+        player.damage = 25;
+        player.baseSpeed = 6;
+        player.level = 1;
+        
+        // Pouquíssimos NPCs no PVP (Apenas 2 bots)
+        for(let i=0; i<2; i++) spawnBot();
+    } else {
+        // Aplicar bônus de classe se for offline
+        if(player.skill === 'tank') { player.maxHp += 100; player.hp = player.maxHp; player.baseSpeed -= 1; }
+        if(player.skill === 'speed') { player.baseSpeed += 2; }
+        if(player.skill === 'rapid') { player.fireRate = 180; }
+        for(let i=0; i<8; i++) spawnBot();
     }
-    saveToStorage(); // Salva ao iniciar
+
+    respawn();
     requestAnimationFrame(gameLoop);
 }
 
@@ -234,44 +278,57 @@ function update() {
 
     // Movimentação
     let moveX = 0, moveY = 0;
-    if(keys['w'] || keys['arrowup']) moveY -= player.baseSpeed;
-    if(keys['s'] || keys['arrowdown']) moveY += player.baseSpeed;
-    if(keys['a'] || keys['arrowleft']) moveX -= player.baseSpeed;
-    if(keys['d'] || keys['arrowright']) moveX += player.baseSpeed;
+    if(keys['w']) moveY -= player.baseSpeed;
+    if(keys['s']) moveY += player.baseSpeed;
+    if(keys['a']) moveX -= player.baseSpeed;
+    if(keys['d']) moveX += player.baseSpeed;
 
     if(!checkCollision(player.x + moveX, player.y, player.size)) player.x += moveX;
     if(!checkCollision(player.x, player.y + moveY, player.size)) player.y += moveY;
 
+    // Limites do Mundo
     player.x = Math.max(player.size, Math.min(WORLD.width - player.size, player.x));
     player.y = Math.max(player.size, Math.min(WORLD.height - player.size, player.y));
 
     camera.x = player.x - canvas.width / 2;
     camera.y = player.y - canvas.height / 2;
 
+    // Cooldowns
     if(player.skillCD > 0) player.skillCD--;
+    if(player.swordCD > 0) player.swordCD--;
+    if(player.swordActive > 0) player.swordActive--;
 
-    // Bots (IA Simples)
-    if(isOffline) {
-        bots.forEach(bot => {
-            const dist = Math.hypot(player.x - bot.x, player.y - bot.y);
-            if(dist < 600 && !player.invisible) {
-                const angle = Math.atan2(player.y - bot.y, player.x - bot.x);
-                bot.x += Math.cos(angle) * bot.speed;
-                bot.y += Math.sin(angle) * bot.speed;
-                
-                if(Date.now() - bot.lastFire > 1800) {
-                    projectiles.push({
-                        x: bot.x, y: bot.y, 
-                        vx: Math.cos(angle) * 8, vy: Math.sin(angle) * 8,
-                        owner: 'opponent', color: bot.color, damage: 15
-                    });
-                    bot.lastFire = Date.now();
-                }
+    // Itens de Cura
+    items.forEach((item, index) => {
+        if(Math.hypot(player.x - item.x, player.y - item.y) < player.size + 15) {
+            player.hp = Math.min(player.maxHp, player.hp + item.val);
+            items.splice(index, 1);
+            SFX.heal();
+            setTimeout(() => {
+                items.push({ x: Math.random()*WORLD.width, y: Math.random()*WORLD.height, type: 'heal', val: 40 });
+            }, 10000);
+        }
+    });
+
+    // IA Bots
+    bots.forEach((bot, bIdx) => {
+        const dist = Math.hypot(player.x - bot.x, player.y - bot.y);
+        if(dist < 500 && !player.invisible) {
+            const angle = Math.atan2(player.y - bot.y, player.x - bot.x);
+            bot.x += Math.cos(angle) * bot.speed;
+            bot.y += Math.sin(angle) * bot.speed;
+            if(Date.now() - bot.lastFire > 2000) {
+                projectiles.push({
+                    x: bot.x, y: bot.y, vx: Math.cos(angle) * 8, vy: Math.sin(angle) * 8,
+                    owner: 'opponent', color: bot.color, damage: 15
+                });
+                bot.lastFire = Date.now();
+                SFX.shoot();
             }
-        });
-    }
+        }
+    });
 
-    // Projetéis
+    // Projéteis
     for(let i = projectiles.length - 1; i >= 0; i--) {
         let p = projectiles[i];
         p.x += p.vx; p.y += p.vy;
@@ -281,58 +338,59 @@ function update() {
         if(p.owner === 'opponent') {
             if(Math.hypot(p.x - player.x, p.y - player.y) < player.size && !player.invisible) {
                 player.hp -= p.damage;
+                SFX.hit();
                 projectiles.splice(i, 1);
                 if(player.hp <= 0) { respawn(); saveToStorage(); }
             }
         } else {
-            if(isOffline) {
-                bots.forEach((bot, bIdx) => {
-                    if(Math.hypot(p.x - bot.x, p.y - bot.y) < bot.size) {
-                        bot.hp -= player.damage; // Usa o dano atualizado do player
-                        projectiles.splice(i, 1);
-                        if(bot.hp <= 0) {
-                            bots.splice(bIdx, 1);
-                            player.score++;
-                            addXP(40 + (player.level * 5));
-                            setTimeout(spawnBot, 3000);
-                        }
-                    }
-                });
-            } else if(Math.hypot(p.x - opponent.x, p.y - opponent.y) < opponent.size) {
+            // Dano em Bots
+            bots.forEach((bot, bIdx) => {
+                if(Math.hypot(p.x - bot.x, p.y - bot.y) < bot.size) {
+                    bot.hp -= player.damage;
+                    SFX.hit();
+                    projectiles.splice(i, 1);
+                    if(bot.hp <= 0) { bots.splice(bIdx, 1); player.score++; addXP(45); setTimeout(spawnBot, 5000); }
+                }
+            });
+            // Dano em Player Oponente
+            if(!isOffline && Math.hypot(p.x - opponent.x, p.y - opponent.y) < opponent.size) {
                 projectiles.splice(i, 1);
                 sendData({ type: 'hit', damage: player.damage });
             }
         }
     }
 
-    // Atualizar Interface
+    // UI Updates
     document.getElementById('status-hp').innerText = `Vida: ${Math.max(0, Math.ceil(player.hp))}`;
-    document.getElementById('status-xp').innerText = `Nível ${player.level} (${player.xp}/${player.level*100} XP)`;
-    document.getElementById('stats-panel').innerText = `Dano: ${player.damage} | Vel: ${player.baseSpeed.toFixed(1)}`;
-    document.getElementById('status-skill').innerText = `Habilidade: ${player.skillCD <= 0 ? 'PRONTA [M2]' : Math.ceil(player.skillCD/60)+'s'}`;
+    document.getElementById('status-xp').innerText = isOffline ? `Nível ${player.level} (${player.xp}/${player.level*100} XP)` : "Modo Arena (Equilibrado)";
     document.getElementById('score-me').innerText = `${player.name}: ${player.score}`;
 
-    if(!isOffline) sendData({ type: 'pos', x: player.x, y: player.y, hp: player.hp, score: player.score, inv: player.invisible, color: player.color, name: player.name });
+    if(!isOffline) sendData({ 
+        type: 'pos', x: player.x, y: player.y, hp: player.hp, maxHp: player.maxHp, 
+        score: player.score, inv: player.invisible, color: player.color, 
+        name: player.name, sa: player.swordActive 
+    });
 }
 
-/** RENDERIZAÇÃO **/
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
     ctx.translate(-camera.x, -camera.y);
-
-    // Grid de Fundo
+    
+    // Grade
     ctx.strokeStyle = '#252525';
-    ctx.lineWidth = 1;
     for(let x=0; x<=WORLD.width; x+=100) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, WORLD.height); ctx.stroke(); }
     for(let y=0; y<=WORLD.height; y+=100) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WORLD.width, y); ctx.stroke(); }
     
     // Obstáculos
     ctx.fillStyle = '#34495e';
-    obstacles.forEach(o => { 
-        ctx.fillRect(o.x, o.y, o.w, o.h); 
-        ctx.strokeStyle = '#2ecc71';
-        ctx.strokeRect(o.x, o.y, o.w, o.h); 
+    obstacles.forEach(o => { ctx.fillRect(o.x, o.y, o.w, o.h); ctx.strokeStyle = '#2ecc71'; ctx.strokeRect(o.x, o.y, o.w, o.h); });
+
+    // Itens
+    items.forEach(item => {
+        ctx.fillStyle = '#2ecc71';
+        ctx.beginPath(); ctx.arc(item.x, item.y, 10, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = 'white'; ctx.fillText('+', item.x, item.y+5);
     });
     
     bots.forEach(bot => drawPlayer(bot));
@@ -341,10 +399,7 @@ function draw() {
 
     projectiles.forEach(p => {
         ctx.fillStyle = p.color;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = p.color;
         ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
     });
 
     ctx.restore();
@@ -355,7 +410,13 @@ function drawPlayer(p) {
     ctx.save();
     ctx.translate(p.x, p.y);
     
-    // Nome e Barra de Vida
+    // Efeito de Espada
+    if(p.swordActive > 0) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.arc(0, 0, 80 + (20 - p.swordActive), 0, Math.PI*2); ctx.stroke();
+    }
+
     ctx.fillStyle = 'white';
     ctx.font = 'bold 14px Arial';
     ctx.textAlign = 'center';
@@ -364,32 +425,14 @@ function drawPlayer(p) {
     ctx.fillStyle = '#444';
     ctx.fillRect(-30, -35, 60, 6);
     ctx.fillStyle = p.hp > (p.maxHp * 0.2) ? '#2ecc71' : '#ff4757';
-    ctx.fillRect(-30, -35, (Math.max(0, p.hp)/p.maxHp)*60, 6);
+    let lifeWidth = (Math.max(0, p.hp) / p.maxHp) * 60;
+    ctx.fillRect(-30, -35, Math.min(60, lifeWidth), 6);
 
-    // Corpo do Jogador
     ctx.globalAlpha = p.invisible ? 0.2 : 1.0;
     ctx.fillStyle = p.color;
     ctx.beginPath(); ctx.arc(0, 0, p.size, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = 'white'; 
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    
+    ctx.strokeStyle = 'white'; ctx.stroke();
     ctx.restore();
-}
-
-/** FUNÇÕES DE APOIO **/
-function spawnBot() {
-    bots.push({
-        x: Math.random() * WORLD.width,
-        y: Math.random() * WORLD.height,
-        size: 22,
-        speed: 2 + Math.random() * 2,
-        hp: 50 + (player.level * 10),
-        maxHp: 50 + (player.level * 10),
-        color: '#f39c12',
-        name: 'Bot ' + Math.floor(Math.random() * 100),
-        lastFire: 0
-    });
 }
 
 function generateMap() {
@@ -399,7 +442,7 @@ function generateMap() {
         {x: -50, y: 0, w: 50, h: WORLD.height},
         {x: WORLD.width, y: 0, w: 50, h: WORLD.height}
     ];
-    for(let i=0; i<25; i++) {
+    for(let i=0; i<30; i++) {
         obstacles.push({
             x: 300 + Math.random()*(WORLD.width-600),
             y: 300 + Math.random()*(WORLD.height-600),
@@ -418,41 +461,48 @@ function checkCollision(nx, ny, size) {
 
 function respawn() {
     player.hp = player.maxHp;
-    player.x = 500 + Math.random() * (WORLD.width - 1000);
-    player.y = 500 + Math.random() * (WORLD.height - 1000);
+    let safe = false;
+    while(!safe) {
+        player.x = 200 + Math.random() * (WORLD.width - 400);
+        player.y = 200 + Math.random() * (WORLD.height - 400);
+        if(!checkCollision(player.x, player.y, player.size + 20)) safe = true;
+    }
+}
+
+function spawnBot() {
+    let bx, by, safe = false;
+    while(!safe) {
+        bx = Math.random() * WORLD.width;
+        by = Math.random() * WORLD.height;
+        if(!checkCollision(bx, by, 22)) safe = true;
+    }
+    bots.push({ x: bx, y: by, size: 22, speed: 2.5, hp: 60, maxHp: 60, color: '#f39c12', name: 'Bot NPC', lastFire: 0 });
 }
 
 function fire() {
-    if(player.hp <= 0) return;
+    if(player.hp <= 0 || player.invisible) return;
     if(Date.now() - player.lastFire < player.fireRate) return;
     player.lastFire = Date.now();
     const angle = Math.atan2(mousePos.y + camera.y - player.y, mousePos.x + camera.x - player.x);
-    const p = { 
-        x: player.x, y: player.y, 
-        vx: Math.cos(angle) * player.bulletSpeed, 
-        vy: Math.sin(angle) * player.bulletSpeed, 
-        owner: 'me', color: player.color,
-        damage: player.damage
-    };
+    const p = { x: player.x, y: player.y, vx: Math.cos(angle) * player.bulletSpeed, vy: Math.sin(angle) * player.bulletSpeed, owner: 'me', color: player.color, damage: player.damage };
     projectiles.push(p);
+    SFX.shoot();
     sendData({ type: 'fire', p });
 }
 
 function activateSkill() {
     if(player.skillCD > 0 || player.hp <= 0) return;
+    SFX.skill();
     if(player.skill === 'teleport') {
         const angle = Math.atan2(mousePos.y + camera.y - player.y, mousePos.x + camera.x - player.x);
-        const tx = player.x + Math.cos(angle) * 300, ty = player.y + Math.sin(angle) * 300;
-        if(!checkCollision(tx, ty, player.size)) { 
-            player.x = tx; player.y = ty; player.skillCD = 180; 
-        }
+        const tx = player.x + Math.cos(angle) * 350, ty = player.y + Math.sin(angle) * 350;
+        if(!checkCollision(tx, ty, player.size)) { player.x = tx; player.y = ty; player.skillCD = 240; }
     } else if(player.skill === 'ghost') {
         player.invisible = true; player.skillCD = 600;
         setTimeout(() => player.invisible = false, 3000);
     }
 }
 
-/** REDE E UI **/
 function selectSkill(skill, el) { 
     player.skill = skill; 
     document.querySelectorAll('.skill-btn').forEach(b => b.classList.remove('selected'));
@@ -460,20 +510,17 @@ function selectSkill(skill, el) {
 }
 
 function showLobby() {
+    audioCtx.resume();
     player.name = document.getElementById('nickname').value || 'Jogador';
     player.color = document.getElementById('playerColor').value;
     document.getElementById('main-menu').classList.add('hidden');
     document.getElementById('lobby-menu').classList.remove('hidden');
 }
 
-function backToMain() {
-    document.getElementById('lobby-menu').classList.add('hidden');
-    document.getElementById('main-menu').classList.remove('hidden');
-}
-
+function backToMain() { document.getElementById('lobby-menu').classList.add('hidden'); document.getElementById('main-menu').classList.remove('hidden'); }
 function startOffline() { isOffline = true; document.getElementById('ui-overlay').classList.add('hidden'); initGame(); }
 
-// WebRTC logic...
+/** REDE P2P **/
 const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 let dataChannel;
 
@@ -509,38 +556,41 @@ function setupDataChannel(ch) {
     dataChannel.onopen = () => { document.getElementById('ui-overlay').classList.add('hidden'); initGame(); };
     dataChannel.onmessage = (e) => {
         const data = JSON.parse(e.data);
-        if(data.type === 'pos') { Object.assign(opponent, data); }
-        if(data.type === 'hit') { player.hp -= data.damage; if(player.hp <= 0) { sendData({type:'kill'}); respawn(); saveToStorage(); } }
+        if(data.type === 'pos') { Object.assign(opponent, data); opponent.swordActive = data.sa; }
+        if(data.type === 'hit') { player.hp -= data.damage; SFX.hit(); if(player.hp <= 0) { sendData({type:'kill'}); respawn(); } }
         if(data.type === 'kill') { opponent.score++; }
-        if(data.type === 'fire') { data.p.owner = 'opponent'; projectiles.push(data.p); }
+        if(data.type === 'fire') { data.p.owner = 'opponent'; projectiles.push(data.p); SFX.shoot(); }
+        if(data.type === 'sword') { opponent.swordActive = 20; SFX.sword(); }
     };
 }
 
 function drawMinimap() {
     mctx.clearRect(0, 0, miniCanvas.width, miniCanvas.height);
     const ratio = miniCanvas.width / WORLD.width;
-    mctx.fillStyle = '#555';
+    mctx.fillStyle = '#444';
     obstacles.forEach(o => mctx.fillRect(o.x*ratio, o.y*ratio, o.w*ratio, o.h*ratio));
     mctx.fillStyle = player.color;
     mctx.beginPath(); mctx.arc(player.x*ratio, player.y*ratio, 4, 0, Math.PI*2); mctx.fill();
-    bots.forEach(b => {
-        mctx.fillStyle = b.color;
-        mctx.beginPath(); mctx.arc(b.x*ratio, b.y*ratio, 3, 0, Math.PI*2); mctx.fill();
-    });
+    if(!isOffline) {
+        mctx.fillStyle = opponent.color;
+        mctx.beginPath(); mctx.arc(opponent.x*ratio, opponent.y*ratio, 4, 0, Math.PI*2); mctx.fill();
+    }
 }
 
 function showJoin() { document.getElementById('lobby-menu').classList.add('hidden'); document.getElementById('join-setup').classList.remove('hidden'); }
 function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; miniCanvas.width = 150; miniCanvas.height = 150; }
-function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
+function gameLoop() { if(gameRunning) { update(); draw(); requestAnimationFrame(gameLoop); } }
 
 window.addEventListener('resize', resize);
-window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+window.addEventListener('keydown', e => {
+    keys[e.key.toLowerCase()] = true;
+    if(e.key.toLowerCase() === 'r') swordAttack();
+});
 window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 window.addEventListener('mousemove', e => { mousePos.x = e.clientX; mousePos.y = e.clientY; });
 window.addEventListener('mousedown', e => { if(e.button === 0) fire(); if(e.button === 2) activateSkill(); });
 window.oncontextmenu = (e) => e.preventDefault();
 
-// Inicialização
 loadFromStorage();
 resize();
 </script>
