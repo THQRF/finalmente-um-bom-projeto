@@ -2,144 +2,466 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Battle Arena Ultra P2P - Pro</title>
+    <title>Battle Arena Ultra P2P - Pro Evolution</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #111; font-family: 'Segoe UI', sans-serif; color: white; }
+        body { margin: 0; overflow: hidden; background: #111; font-family: 'Segoe UI', sans-serif; color: white; user-select: none; }
         canvas { display: block; background: #1a1a1a; }
-        
-        /* CORREÇÃO: Garantir que o overlay fique sempre acima de tudo e capture cliques */
-        #ui-overlay { 
-            position: absolute; 
-            top: 0; 
-            left: 0; 
-            width: 100%; 
-            height: 100%; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            background: rgba(0,0,0,0.85); 
-            z-index: 100; /* Z-index alto para prioridade */
-        }
-        
-        .menu { 
-            background: #2c3e50; 
-            padding: 30px; 
-            border-radius: 15px; 
-            text-align: center; 
-            width: 400px; 
-            border: 2px solid #34495e; 
-            pointer-events: auto; /* Garante que aceite cliques */
-        }
-        
+        #ui-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.85); z-index: 10; }
+        .menu { background: #2c3e50; padding: 30px; border-radius: 15px; text-align: center; width: 420px; border: 2px solid #34495e; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
         .skill-box { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
-        .skill-btn { 
-            padding: 8px; 
-            font-size: 12px; 
-            background: #34495e; 
-            border: 1px solid #2ecc71; 
-            cursor: pointer; 
-            color: white; 
-            transition: 0.2s;
-        }
-        .skill-btn:hover { background: #3d566e; }
-        .skill-btn.selected { background: #2ecc71; color: #000; }
+        .skill-btn { padding: 8px; font-size: 12px; background: #34495e; border: 1px solid #2ecc71; cursor: pointer; color: white; transition: 0.2s; border-radius: 4px; }
+        .skill-btn:hover { background: #3e5871; }
+        .skill-btn.selected { background: #2ecc71; color: #000; font-weight: bold; }
+        input, button, textarea { width: 95%; margin: 10px 0; padding: 12px; border-radius: 8px; border: none; box-sizing: border-box; }
+        button { background: #27ae60; color: white; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: 0.3s; }
+        button:hover { background: #2ecc71; transform: scale(1.02); }
+        textarea { height: 60px; font-size: 10px; font-family: monospace; resize: none; background: #ecf0f1; }
         
-        input, select, button, textarea { 
-            width: 90%; 
-            margin: 10px auto; 
-            padding: 12px; 
-            border-radius: 8px; 
-            border: none; 
-            display: block;
-        }
+        #hud { position: absolute; top: 20px; left: 20px; pointer-events: none; z-index: 5; text-shadow: 2px 2px 4px black; }
+        #stats-panel { font-size: 14px; color: #bdc3c7; margin-top: 5px; background: rgba(0,0,0,0.3); padding: 5px; border-radius: 5px; }
+        #scoreboard { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.6); padding: 15px; border-radius: 8px; min-width: 150px; z-index: 5; border: 1px solid #444; }
+        #minimap { position: absolute; bottom: 20px; right: 20px; width: 150px; height: 150px; background: rgba(0,0,0,0.7); border: 2px solid #555; border-radius: 4px; z-index: 5; }
         
-        button { 
-            background: #27ae60; 
-            color: white; 
-            font-weight: bold; 
-            cursor: pointer; 
-            transition: transform 0.1s;
-        }
-        button:active { transform: scale(0.95); }
-        
-        #hud { position: absolute; top: 20px; left: 20px; pointer-events: none; z-index: 5; }
-        #scoreboard { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; min-width: 150px; z-index: 5; }
+        .save-badge { font-size: 10px; color: #2ecc71; display: none; margin-top: 5px; }
         .hidden { display: none !important; }
-        
-        textarea { height: 60px; font-size: 10px; font-family: monospace; resize: none; background: #1a1a1a; color: #2ecc71; border: 1px solid #34495e; }
     </style>
 </head>
 <body>
 
 <div id="hud">
-    <div id="status-hp" style="color: #ff4757; font-size: 24px;">Vida: 100%</div>
-    <div id="status-skill">Habilidade: Pronta [M2]</div>
+    <div id="status-hp" style="color: #ff4757; font-size: 28px; font-weight: bold;">Vida: 100%</div>
+    <div id="status-xp" style="color: #f1c40f; font-size: 18px;">Nível 1 (0/100 XP)</div>
+    <div id="stats-panel">Dano: 20 | Vel: 5.0</div>
+    <div id="status-skill" style="color: #2ecc71; font-size: 18px;">Habilidade: Pronta [M2]</div>
+    <div id="save-notification" class="save-badge">✓ PROGRESSO SALVO</div>
 </div>
 
 <div id="scoreboard">
-    <div style="color: #2ecc71">Placar:</div>
+    <div style="color: #2ecc71; font-weight: bold; margin-bottom: 5px;">PLACAR</div>
     <div id="score-me">Você: 0</div>
-    <div id="score-enemy">Inimigo: 0</div>
+    <div id="score-enemy">Inimigos: 0</div>
 </div>
+
+<canvas id="minimap"></canvas>
 
 <div id="ui-overlay">
     <div id="main-menu" class="menu">
-        <h1 style="color:#2ecc71; margin-top: 0;">BATTLE ARENA</h1>
-        <input type="text" id="nickname" placeholder="Seu Nickname" maxlength="10">
+        <h1 style="color:#2ecc71; margin-top:0;">BATTLE ARENA PRO</h1>
         
-        <p style="margin-bottom: 5px;">Escolha sua Habilidade:</p>
-        <div class="skill-box">
-            <div class="skill-btn" id="default-skill" onclick="selectSkill('speed', this)">Velocidade+</div>
-            <div class="skill-btn" onclick="selectSkill('tank', this)">Blindagem (HP+)</div>
-            <div class="skill-btn" onclick="selectSkill('teleport', this)">Teleporte</div>
-            <div class="skill-btn" onclick="selectSkill('rapid', this)">Tiro Rápido</div>
+        <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 10px; margin-bottom: 15px;">
+            <p style="margin: 0 0 10px 0; font-size: 13px;">Gerenciar Dados (.txt)</p>
+            <div style="display: flex; gap: 5px;">
+                <button onclick="exportCharacter()" style="font-size: 10px; background: #34495e;">Exportar Backup</button>
+                <button onclick="importCharacter()" style="font-size: 10px; background: #34495e;">Importar Backup</button>
+            </div>
         </div>
+
+        <input type="text" id="nickname" placeholder="Nome do Jogador" maxlength="10">
         
-        <p style="margin: 5px 0;">Cor do Tanque:</p>
+        <p>Habilidade Especial:</p>
+        <div class="skill-box">
+            <div class="skill-btn" id="btn-speed" onclick="selectSkill('speed', this)">Velocidade++</div>
+            <div class="skill-btn" id="btn-tank" onclick="selectSkill('tank', this)">Blindagem (HP+)</div>
+            <div class="skill-btn" id="btn-teleport" onclick="selectSkill('teleport', this)">Teleporte</div>
+            <div class="skill-btn" id="btn-rapid" onclick="selectSkill('rapid', this)">Tiro Rápido</div>
+            <div class="skill-btn" id="btn-ghost" onclick="selectSkill('ghost', this)">Invisibilidade</div>
+        </div>
+
         <input type="color" id="playerColor" value="#e74c3c" style="height: 40px; padding: 2px;">
-        
-        <button type="button" onclick="showLobby()">ENTRAR NO LOBBY</button>
+        <button onclick="showLobby()">INICIAR ARENA</button>
     </div>
 
     <div id="lobby-menu" class="menu hidden">
-        <h2 style="color:#2ecc71">Lobby</h2>
-        <button onclick="startHost()">CRIAR SALA (HOST)</button>
-        <button onclick="showJoin()" style="background:#2980b9">ENTRAR EM SALA</button>
-        <button onclick="backToMain()" style="background:#7f8c8d; font-size: 12px;">VOLTAR</button>
+        <h2>MODO DE JOGO</h2>
+        <button onclick="startOffline()" style="background:#8e44ad">Treinamento Offline (Bots)</button>
+        <hr style="border: 0; border-top: 1px solid #444; margin: 20px 0;">
+        <button onclick="startHost()">Criar Sala (Host)</button>
+        <button onclick="showJoin()" style="background:#2980b9">Entrar em Sala</button>
+        <button onclick="backToMain()" style="background:#7f8c8d; font-size: 10px;">Voltar</button>
     </div>
 
     <div id="host-setup" class="menu hidden">
         <p>1. Envie este código ao amigo:</p>
         <textarea id="offer-token" readonly onclick="this.select()"></textarea>
-        <p>2. Cole a RESPOSTA dele aqui:</p>
-        <textarea id="answer-token" placeholder="Cole o código de resposta..."></textarea>
+        <p>2. Cole a resposta dele aqui:</p>
+        <textarea id="answer-token" placeholder="Cole a resposta aqui..."></textarea>
         <button onclick="confirmHost()">CONECTAR AGORA</button>
     </div>
 
     <div id="join-setup" class="menu hidden">
-        <p>1. Cole o código do HOST:</p>
-        <textarea id="join-offer" placeholder="Cole o código do host..." oninput="autoGenerateAnswer()"></textarea>
-        <p>2. Envie sua RESPOSTA ao host:</p>
+        <p>1. Cole o código do Host:</p>
+        <textarea id="join-offer" placeholder="Cole o código aqui..." oninput="autoGenerateAnswer()"></textarea>
+        <p>2. Envie sua resposta ao Host:</p>
         <textarea id="join-answer" readonly onclick="this.select()"></textarea>
-        <p style="font-size: 11px; color: #bdc3c7;">Aguardando o host confirmar...</p>
     </div>
 </div>
 
 <canvas id="gameCanvas"></canvas>
 
 <script>
-/** LOGICA DE INTERFACE **/
-function selectSkill(skill, el) {
-    player.skill = skill;
+/** CONFIGURAÇÕES E ESTADO **/
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const miniCanvas = document.getElementById('minimap');
+const mctx = miniCanvas.getContext('2d');
+
+const WORLD = { width: 3000, height: 3000 };
+let camera = { x: 0, y: 0 };
+let isOffline = false;
+
+// Atributos base do jogador
+let player = {
+    x: 1500, y: 1500, size: 22, color: '#e74c3c', name: '', 
+    hp: 100, maxHp: 100, score: 0, skill: 'speed', skillCD: 0,
+    invisible: false, lastFire: 0, fireRate: 400,
+    xp: 0, level: 1, 
+    baseSpeed: 5, damage: 20,
+    bulletSpeed: 12
+};
+
+let bots = [];
+let opponent = { x: -2000, y: -2000, size: 22, hp: 100, maxHp: 100, score: 0, invisible: false, name: 'Inimigo', color: '#3498db' };
+let projectiles = [];
+let obstacles = [];
+let keys = {};
+let mousePos = { x: 0, y: 0 };
+
+/** SISTEMA DE SALVAMENTO MELHORADO **/
+// O jogo salva automaticamente no LocalStorage para persistência rápida
+// e permite exportar o TXT para segurança.
+
+function saveToStorage() {
+    const saveData = {
+        name: player.name,
+        color: player.color,
+        skill: player.skill,
+        xp: player.xp,
+        level: player.level,
+        score: player.score,
+        maxHp: player.maxHp,
+        damage: player.damage,
+        baseSpeed: player.baseSpeed
+    };
+    localStorage.setItem('battle_arena_save', JSON.stringify(saveData));
+    showSaveBadge();
+}
+
+function loadFromStorage() {
+    const saved = localStorage.getItem('battle_arena_save');
+    if(saved) {
+        const data = JSON.parse(saved);
+        Object.assign(player, data);
+        document.getElementById('nickname').value = data.name;
+        document.getElementById('playerColor').value = data.color;
+        const btn = document.getElementById('btn-' + data.skill);
+        if(btn) selectSkill(data.skill, btn);
+        return true;
+    }
+    return false;
+}
+
+function showSaveBadge() {
+    const badge = document.getElementById('save-notification');
+    badge.style.display = 'block';
+    setTimeout(() => badge.style.display = 'none', 2000);
+}
+
+function exportCharacter() {
+    const data = localStorage.getItem('battle_arena_save') || JSON.stringify(player);
+    const blob = new Blob([data], {type: 'text/plain'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ArenaPlayer_${player.name || 'Hero'}_Lvl${player.level}.txt`;
+    a.click();
+}
+
+function importCharacter() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.txt';
+    input.onchange = e => {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = event => {
+            try {
+                const data = JSON.parse(event.target.result);
+                localStorage.setItem('battle_arena_save', JSON.stringify(data));
+                location.reload(); // Recarrega para aplicar
+            } catch(err) { alert("Arquivo de save inválido!"); }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
+}
+
+/** PROGRESSÃO DE PODER **/
+function addXP(amount) {
+    player.xp += amount;
+    let nextLevelXp = player.level * 100;
+    
+    if(player.xp >= nextLevelXp) {
+        player.xp -= nextLevelXp;
+        player.level++;
+        
+        // Aumento de Atributos ao subir de nível
+        player.maxHp += 15;
+        player.hp = player.maxHp;
+        player.damage += 5; // Fica mais forte
+        player.baseSpeed += 0.2; // Fica mais rápido
+        
+        saveToStorage(); // Auto-save no level up
+        alert(`LEVEL UP! Nível ${player.level}\n+15 HP Max\n+5 Dano\n+Velocidade`);
+    }
+}
+
+/** LÓGICA DO JOGO **/
+function initGame() {
+    // Aplicar bônus de classe (acumulativos aos atributos de nível)
+    if(player.skill === 'tank') { player.maxHp += 100; player.hp = player.maxHp; player.baseSpeed -= 1; }
+    if(player.skill === 'speed') { player.baseSpeed += 2; }
+    if(player.skill === 'rapid') { player.fireRate = 180; }
+
+    generateMap();
+    if(isOffline) {
+        for(let i=0; i<6; i++) spawnBot();
+    }
+    saveToStorage(); // Salva ao iniciar
+    requestAnimationFrame(gameLoop);
+}
+
+function update() {
+    if(player.hp <= 0) return;
+
+    // Movimentação
+    let moveX = 0, moveY = 0;
+    if(keys['w'] || keys['arrowup']) moveY -= player.baseSpeed;
+    if(keys['s'] || keys['arrowdown']) moveY += player.baseSpeed;
+    if(keys['a'] || keys['arrowleft']) moveX -= player.baseSpeed;
+    if(keys['d'] || keys['arrowright']) moveX += player.baseSpeed;
+
+    if(!checkCollision(player.x + moveX, player.y, player.size)) player.x += moveX;
+    if(!checkCollision(player.x, player.y + moveY, player.size)) player.y += moveY;
+
+    player.x = Math.max(player.size, Math.min(WORLD.width - player.size, player.x));
+    player.y = Math.max(player.size, Math.min(WORLD.height - player.size, player.y));
+
+    camera.x = player.x - canvas.width / 2;
+    camera.y = player.y - canvas.height / 2;
+
+    if(player.skillCD > 0) player.skillCD--;
+
+    // Bots (IA Simples)
+    if(isOffline) {
+        bots.forEach(bot => {
+            const dist = Math.hypot(player.x - bot.x, player.y - bot.y);
+            if(dist < 600 && !player.invisible) {
+                const angle = Math.atan2(player.y - bot.y, player.x - bot.x);
+                bot.x += Math.cos(angle) * bot.speed;
+                bot.y += Math.sin(angle) * bot.speed;
+                
+                if(Date.now() - bot.lastFire > 1800) {
+                    projectiles.push({
+                        x: bot.x, y: bot.y, 
+                        vx: Math.cos(angle) * 8, vy: Math.sin(angle) * 8,
+                        owner: 'opponent', color: bot.color, damage: 15
+                    });
+                    bot.lastFire = Date.now();
+                }
+            }
+        });
+    }
+
+    // Projetéis
+    for(let i = projectiles.length - 1; i >= 0; i--) {
+        let p = projectiles[i];
+        p.x += p.vx; p.y += p.vy;
+
+        if(checkCollision(p.x, p.y, 5)) { projectiles.splice(i, 1); continue; }
+
+        if(p.owner === 'opponent') {
+            if(Math.hypot(p.x - player.x, p.y - player.y) < player.size && !player.invisible) {
+                player.hp -= p.damage;
+                projectiles.splice(i, 1);
+                if(player.hp <= 0) { respawn(); saveToStorage(); }
+            }
+        } else {
+            if(isOffline) {
+                bots.forEach((bot, bIdx) => {
+                    if(Math.hypot(p.x - bot.x, p.y - bot.y) < bot.size) {
+                        bot.hp -= player.damage; // Usa o dano atualizado do player
+                        projectiles.splice(i, 1);
+                        if(bot.hp <= 0) {
+                            bots.splice(bIdx, 1);
+                            player.score++;
+                            addXP(40 + (player.level * 5));
+                            setTimeout(spawnBot, 3000);
+                        }
+                    }
+                });
+            } else if(Math.hypot(p.x - opponent.x, p.y - opponent.y) < opponent.size) {
+                projectiles.splice(i, 1);
+                sendData({ type: 'hit', damage: player.damage });
+            }
+        }
+    }
+
+    // Atualizar Interface
+    document.getElementById('status-hp').innerText = `Vida: ${Math.max(0, Math.ceil(player.hp))}`;
+    document.getElementById('status-xp').innerText = `Nível ${player.level} (${player.xp}/${player.level*100} XP)`;
+    document.getElementById('stats-panel').innerText = `Dano: ${player.damage} | Vel: ${player.baseSpeed.toFixed(1)}`;
+    document.getElementById('status-skill').innerText = `Habilidade: ${player.skillCD <= 0 ? 'PRONTA [M2]' : Math.ceil(player.skillCD/60)+'s'}`;
+    document.getElementById('score-me').innerText = `${player.name}: ${player.score}`;
+
+    if(!isOffline) sendData({ type: 'pos', x: player.x, y: player.y, hp: player.hp, score: player.score, inv: player.invisible, color: player.color, name: player.name });
+}
+
+/** RENDERIZAÇÃO **/
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
+
+    // Grid de Fundo
+    ctx.strokeStyle = '#252525';
+    ctx.lineWidth = 1;
+    for(let x=0; x<=WORLD.width; x+=100) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, WORLD.height); ctx.stroke(); }
+    for(let y=0; y<=WORLD.height; y+=100) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WORLD.width, y); ctx.stroke(); }
+    
+    // Obstáculos
+    ctx.fillStyle = '#34495e';
+    obstacles.forEach(o => { 
+        ctx.fillRect(o.x, o.y, o.w, o.h); 
+        ctx.strokeStyle = '#2ecc71';
+        ctx.strokeRect(o.x, o.y, o.w, o.h); 
+    });
+    
+    bots.forEach(bot => drawPlayer(bot));
+    if(!isOffline && !opponent.invisible) drawPlayer(opponent);
+    if(player.hp > 0) drawPlayer(player);
+
+    projectiles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
+    });
+
+    ctx.restore();
+    drawMinimap();
+}
+
+function drawPlayer(p) {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    
+    // Nome e Barra de Vida
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.name + (p.level ? ` [Lvl ${p.level}]` : ''), 0, -40);
+    
+    ctx.fillStyle = '#444';
+    ctx.fillRect(-30, -35, 60, 6);
+    ctx.fillStyle = p.hp > (p.maxHp * 0.2) ? '#2ecc71' : '#ff4757';
+    ctx.fillRect(-30, -35, (Math.max(0, p.hp)/p.maxHp)*60, 6);
+
+    // Corpo do Jogador
+    ctx.globalAlpha = p.invisible ? 0.2 : 1.0;
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(0, 0, p.size, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = 'white'; 
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    ctx.restore();
+}
+
+/** FUNÇÕES DE APOIO **/
+function spawnBot() {
+    bots.push({
+        x: Math.random() * WORLD.width,
+        y: Math.random() * WORLD.height,
+        size: 22,
+        speed: 2 + Math.random() * 2,
+        hp: 50 + (player.level * 10),
+        maxHp: 50 + (player.level * 10),
+        color: '#f39c12',
+        name: 'Bot ' + Math.floor(Math.random() * 100),
+        lastFire: 0
+    });
+}
+
+function generateMap() {
+    obstacles = [
+        {x: 0, y: -50, w: WORLD.width, h: 50},
+        {x: 0, y: WORLD.height, w: WORLD.width, h: 50},
+        {x: -50, y: 0, w: 50, h: WORLD.height},
+        {x: WORLD.width, y: 0, w: 50, h: WORLD.height}
+    ];
+    for(let i=0; i<25; i++) {
+        obstacles.push({
+            x: 300 + Math.random()*(WORLD.width-600),
+            y: 300 + Math.random()*(WORLD.height-600),
+            w: 100 + Math.random()*200,
+            h: 100 + Math.random()*200
+        });
+    }
+}
+
+function checkCollision(nx, ny, size) {
+    for(let o of obstacles) {
+        if (nx + size > o.x && nx - size < o.x + o.w && ny + size > o.y && ny - size < o.y + o.h) return true;
+    }
+    return false;
+}
+
+function respawn() {
+    player.hp = player.maxHp;
+    player.x = 500 + Math.random() * (WORLD.width - 1000);
+    player.y = 500 + Math.random() * (WORLD.height - 1000);
+}
+
+function fire() {
+    if(player.hp <= 0) return;
+    if(Date.now() - player.lastFire < player.fireRate) return;
+    player.lastFire = Date.now();
+    const angle = Math.atan2(mousePos.y + camera.y - player.y, mousePos.x + camera.x - player.x);
+    const p = { 
+        x: player.x, y: player.y, 
+        vx: Math.cos(angle) * player.bulletSpeed, 
+        vy: Math.sin(angle) * player.bulletSpeed, 
+        owner: 'me', color: player.color,
+        damage: player.damage
+    };
+    projectiles.push(p);
+    sendData({ type: 'fire', p });
+}
+
+function activateSkill() {
+    if(player.skillCD > 0 || player.hp <= 0) return;
+    if(player.skill === 'teleport') {
+        const angle = Math.atan2(mousePos.y + camera.y - player.y, mousePos.x + camera.x - player.x);
+        const tx = player.x + Math.cos(angle) * 300, ty = player.y + Math.sin(angle) * 300;
+        if(!checkCollision(tx, ty, player.size)) { 
+            player.x = tx; player.y = ty; player.skillCD = 180; 
+        }
+    } else if(player.skill === 'ghost') {
+        player.invisible = true; player.skillCD = 600;
+        setTimeout(() => player.invisible = false, 3000);
+    }
+}
+
+/** REDE E UI **/
+function selectSkill(skill, el) { 
+    player.skill = skill; 
     document.querySelectorAll('.skill-btn').forEach(b => b.classList.remove('selected'));
     el.classList.add('selected');
 }
 
 function showLobby() {
-    console.log("Botão Entrar no Lobby clicado"); // Log para debug
-    player.name = document.getElementById('nickname').value || 'Player';
+    player.name = document.getElementById('nickname').value || 'Jogador';
     player.color = document.getElementById('playerColor').value;
-    
     document.getElementById('main-menu').classList.add('hidden');
     document.getElementById('lobby-menu').classList.remove('hidden');
 }
@@ -149,253 +471,78 @@ function backToMain() {
     document.getElementById('main-menu').classList.remove('hidden');
 }
 
-function showJoin() {
-    document.getElementById('lobby-menu').classList.add('hidden');
-    document.getElementById('join-setup').classList.remove('hidden');
-}
+function startOffline() { isOffline = true; document.getElementById('ui-overlay').classList.add('hidden'); initGame(); }
 
-/** CONFIGURAÇÕES DO JOGO **/
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-const WORLD = { width: 3000, height: 3000 };
-let camera = { x: 0, y: 0 };
-
-function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-}
-window.addEventListener('resize', resize);
-resize();
-
-let player = {
-    x: 1500, y: 1500, size: 25, speed: 5, color: '#e74c3c', name: '', 
-    hp: 100, maxHp: 100, score: 0, skill: 'speed', skillCD: 0,
-    invisible: false, lastFire: 0, fireRate: 400
-};
-
-let opponent = { x: -1000, y: -1000, size: 25, hp: 100, score: 0, invisible: false, name: 'Inimigo' };
-let projectiles = [];
-let obstacles = [];
-let physicsBlocks = [];
-let keys = {};
-let mousePos = { x: 0, y: 0 };
-
-/** REDE P2P (WEBRTC) **/
+// WebRTC logic...
 const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 let dataChannel;
-let isHost = false;
 
-function sendData(data) {
-    if (dataChannel && dataChannel.readyState === 'open') {
-        dataChannel.send(JSON.stringify(data));
-    }
-}
+function sendData(data) { if (dataChannel && dataChannel.readyState === 'open') dataChannel.send(JSON.stringify(data)); }
 
 async function startHost() {
-    isHost = true;
     document.getElementById('lobby-menu').classList.add('hidden');
     document.getElementById('host-setup').classList.remove('hidden');
-    
-    dataChannel = pc.createDataChannel("game");
-    setupChannelEvents();
-    
+    setupDataChannel(pc.createDataChannel("game"));
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-
-    pc.onicecandidate = ({candidate}) => {
-        if (!candidate) {
-            document.getElementById('offer-token').value = btoa(JSON.stringify(pc.localDescription));
-        }
-    };
+    pc.onicecandidate = ({candidate}) => { if (!candidate) document.getElementById('offer-token').value = btoa(JSON.stringify(pc.localDescription)); };
 }
 
 async function confirmHost() {
     const val = document.getElementById('answer-token').value;
-    if(!val) return alert("Cole o código de resposta!");
-    const answer = JSON.parse(atob(val));
-    await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    if(!val) return;
+    await pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(atob(val))));
 }
 
 async function autoGenerateAnswer() {
     const offerStr = document.getElementById('join-offer').value;
-    if(offerStr.length < 100) return;
-    
-    const offer = JSON.parse(atob(offerStr));
-    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    if(offerStr.length < 50) return;
+    await pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(atob(offerStr))));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
+    pc.onicecandidate = ({candidate}) => { if (!candidate) document.getElementById('join-answer').value = btoa(JSON.stringify(pc.localDescription)); };
+}
 
-    pc.onicecandidate = ({candidate}) => {
-        if (!candidate) {
-            document.getElementById('join-answer').value = btoa(JSON.stringify(pc.localDescription));
-        }
+pc.ondatachannel = (e) => setupDataChannel(e.channel);
+function setupDataChannel(ch) {
+    dataChannel = ch;
+    dataChannel.onopen = () => { document.getElementById('ui-overlay').classList.add('hidden'); initGame(); };
+    dataChannel.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if(data.type === 'pos') { Object.assign(opponent, data); }
+        if(data.type === 'hit') { player.hp -= data.damage; if(player.hp <= 0) { sendData({type:'kill'}); respawn(); saveToStorage(); } }
+        if(data.type === 'kill') { opponent.score++; }
+        if(data.type === 'fire') { data.p.owner = 'opponent'; projectiles.push(data.p); }
     };
 }
 
-pc.ondatachannel = (event) => {
-    dataChannel = event.channel;
-    setupChannelEvents();
-};
-
-function setupChannelEvents() {
-    dataChannel.onopen = () => {
-        document.getElementById('ui-overlay').style.display = 'none';
-        initGame();
-    };
-    dataChannel.onmessage = (e) => handleNetworkData(JSON.parse(e.data));
-}
-
-/** CORE DO JOGO **/
-function initGame() {
-    // Aplicar stats baseados na skill
-    if(player.skill === 'tank') { player.hp = 180; player.maxHp = 180; player.speed = 3.5; }
-    if(player.skill === 'speed') { player.speed = 7.5; }
-    if(player.skill === 'rapid') { player.fireRate = 200; }
-
-    if(isHost) {
-        generateMap();
-        sendData({ type: 'map-sync', obstacles, physicsBlocks });
-    }
-    requestAnimationFrame(gameLoop);
-}
-
-function generateMap() {
-    for(let i=0; i<15; i++) {
-        obstacles.push({ x: Math.random()*2500, y: Math.random()*2500, w: 100+Math.random()*200, h: 100+Math.random()*200 });
-    }
-}
-
-function update() {
-    if(player.hp <= 0) return;
-
-    let nextX = player.x;
-    let nextY = player.y;
-
-    if(keys['w']) nextY -= player.speed;
-    if(keys['s']) nextY += player.speed;
-    if(keys['a']) nextX -= player.speed;
-    if(keys['d']) nextX += player.speed;
-
-    // Colisão simples com bordas
-    player.x = Math.max(player.size, Math.min(WORLD.width - player.size, nextX));
-    player.y = Math.max(player.size, Math.min(WORLD.height - player.size, nextY));
-
-    camera.x = player.x - canvas.width / 2;
-    camera.y = player.y - canvas.height / 2;
-
-    if(player.skillCD > 0) player.skillCD--;
-
-    // Update Projéteis
-    projectiles.forEach((p, i) => {
-        p.x += p.vx; p.y += p.vy;
-        if(p.owner === 'opponent') {
-            const d = Math.hypot(p.x - player.x, p.y - player.y);
-            if(d < player.size) {
-                player.hp -= 10;
-                projectiles.splice(i, 1);
-                if(player.hp <= 0) sendData({ type: 'kill' });
-            }
-        }
-    });
-
-    // UI Updates
-    document.getElementById('status-hp').innerText = `Vida: ${Math.max(0, Math.ceil(player.hp))}%`;
-    document.getElementById('score-me').innerText = `Você: ${player.score}`;
-
-    sendData({
-        type: 'pos',
-        x: player.x, y: player.y, hp: player.hp, score: player.score,
-        inv: player.invisible, color: player.color, name: player.name
+function drawMinimap() {
+    mctx.clearRect(0, 0, miniCanvas.width, miniCanvas.height);
+    const ratio = miniCanvas.width / WORLD.width;
+    mctx.fillStyle = '#555';
+    obstacles.forEach(o => mctx.fillRect(o.x*ratio, o.y*ratio, o.w*ratio, o.h*ratio));
+    mctx.fillStyle = player.color;
+    mctx.beginPath(); mctx.arc(player.x*ratio, player.y*ratio, 4, 0, Math.PI*2); mctx.fill();
+    bots.forEach(b => {
+        mctx.fillStyle = b.color;
+        mctx.beginPath(); mctx.arc(b.x*ratio, b.y*ratio, 3, 0, Math.PI*2); mctx.fill();
     });
 }
 
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.save();
-    ctx.translate(-camera.x, -camera.y);
+function showJoin() { document.getElementById('lobby-menu').classList.add('hidden'); document.getElementById('join-setup').classList.remove('hidden'); }
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; miniCanvas.width = 150; miniCanvas.height = 150; }
+function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
 
-    // Chão/Grid
-    ctx.strokeStyle = '#222';
-    for(let x=0; x<WORLD.width; x+=100) {
-        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, WORLD.height); ctx.stroke();
-    }
-    for(let y=0; y<WORLD.height; y+=100) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WORLD.width, y); ctx.stroke();
-    }
-
-    // Obstáculos
-    ctx.fillStyle = '#34495e';
-    obstacles.forEach(o => ctx.fillRect(o.x, o.y, o.w, o.h));
-    
-    // Players
-    drawPlayer(opponent);
-    drawPlayer(player);
-
-    // Balas
-    projectiles.forEach(p => {
-        ctx.fillStyle = p.color;
-        ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI*2); ctx.fill();
-    });
-
-    ctx.restore();
-}
-
-function drawPlayer(p) {
-    if(p.hp <= 0 && p.x < 0) return;
-    ctx.save();
-    ctx.translate(p.x, p.y);
-    ctx.fillStyle = 'white';
-    ctx.textAlign = 'center';
-    ctx.fillText(p.name || 'Inimigo', 0, -40);
-    ctx.fillStyle = p.color || '#e74c3c';
-    ctx.beginPath(); ctx.arc(0, 0, p.size, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
-}
-
-function fire() {
-    const now = Date.now();
-    if(now - player.lastFire < player.fireRate) return;
-    player.lastFire = now;
-    
-    const angle = Math.atan2(mousePos.y + camera.y - player.y, mousePos.x + camera.x - player.x);
-    const p = { 
-        x: player.x, y: player.y, 
-        vx: Math.cos(angle) * 12, vy: Math.sin(angle) * 12, 
-        owner: 'me', color: player.color 
-    };
-    projectiles.push(p);
-    sendData({ type: 'fire', p });
-}
-
-function handleNetworkData(data) {
-    if(data.type === 'pos') {
-        Object.assign(opponent, data);
-    } else if(data.type === 'fire') {
-        data.p.owner = 'opponent';
-        projectiles.push(data.p);
-    } else if(data.type === 'kill') {
-        opponent.score++;
-        player.hp = 100; player.x = 1500; player.y = 1500; // Respawn simples
-    } else if(data.type === 'map-sync') {
-        obstacles = data.obstacles;
-    }
-}
-
-function gameLoop() {
-    update();
-    draw();
-    requestAnimationFrame(gameLoop);
-}
-
-// Eventos de entrada
+window.addEventListener('resize', resize);
 window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
 window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 window.addEventListener('mousemove', e => { mousePos.x = e.clientX; mousePos.y = e.clientY; });
-window.addEventListener('mousedown', e => { if(e.button === 0) fire(); });
+window.addEventListener('mousedown', e => { if(e.button === 0) fire(); if(e.button === 2) activateSkill(); });
 window.oncontextmenu = (e) => e.preventDefault();
 
-// Selecionar skill padrão ao carregar
-document.getElementById('default-skill').click();
+// Inicialização
+loadFromStorage();
+resize();
 </script>
 </body>
 </html>
