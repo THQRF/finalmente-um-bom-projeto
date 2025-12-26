@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Battle Arena Ultra P2P</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #111; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: white; }
+        canvas { display: block; background: #1a1a1a; cursor: crosshair; }
+        #ui-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.85); z-index: 10; transition: 0.5s; }
+        .menu { background: #2c3e50; padding: 30px; border-radius: 15px; text-align: center; width: 380px; border: 2px solid #34495e; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        input, select, button, textarea { width: 95%; margin: 10px 0; padding: 12px; border-radius: 8px; border: none; outline: none; }
+        input, textarea { background: #34495e; color: white; }
+        button { background: #27ae60; color: white; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: 0.3s; }
+        button:hover { background: #2ecc71; transform: scale(1.02); }
+        textarea { height: 80px; font-size: 10px; resize: none; }
+        .hidden { display: none !important; }
+        #hud { position: absolute; top: 20px; left: 20px; pointer-events: none; text-shadow: 2px 2px 4px black; }
+        .status-bar { font-size: 18px; margin-bottom: 5px; color: #00faff; }
+    </style>
+</head>
+<body>
+
+<div id="hud">
+    <div id="status-shield" class="status-bar">Escudo: Pronto</div>
+    <div id="status-hp" class="status-bar" style="color: #ff4757;">Vida: 100%</div>
+</div>
+
+<div id="ui-overlay">
+    <div id="main-menu" class="menu">
+        <h1 style="margin-top:0; color:#2ecc71">BATTLE ARENA</h1>
+        <input type="text" id="nickname" placeholder="Nome do Jogador" maxlength="10">
+        <label style="display:block; margin-top:10px;">Cor do Tanque:</label>
+        <input type="color" id="playerColor" value="#e74c3c">
+        <button onclick="showLobby()">Entrar no Lobby</button>
+    </div>
+
+    <div id="lobby-menu" class="menu hidden">
+        <h3>Lobby de Guerra</h3>
+        <select id="mapSelect">
+            <option value="campo">Campo Aberto</option>
+            <option value="labirinto">Labirinto de Ferro</option>
+        </select>
+        <button onclick="startHost()">Criar Sala (Host)</button>
+        <button onclick="showJoin()" style="background:#2980b9">Entrar em Sala</button>
+    </div>
+
+    <div id="host-setup" class="menu hidden">
+        <p>1. Copie seu código:</p>
+        <textarea id="offer-token" readonly onclick="this.select()"></textarea>
+        <p>2. Cole a resposta do amigo:</p>
+        <textarea id="answer-token" placeholder="Cole o código recebido aqui..."></textarea>
+        <button onclick="confirmHost()">Estabelecer Conexão</button>
+    </div>
+
+    <div id="join-setup" class="menu hidden">
+        <p>1. Cole o código do Host:</p>
+        <textarea id="join-offer" placeholder="Cole aqui..." oninput="autoGenerateAnswer()"></textarea>
+        <p>2. Envie sua resposta para ele:</p>
+        <textarea id="join-answer" readonly onclick="this.select()"></textarea>
+        <small>Aguardando conexão do Host...</small>
+    </div>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+/** * NETWORKING - WebRTC Logic 
+ */
+const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+let dataChannel;
+let isHost = false;
+
+// Fecha o menu automaticamente quando conectar
+setInterval(() => {
+    if(dataChannel && dataChannel.readyState === 'open') {
+        document.getElementById('ui-overlay').classList.add('hidden');
+    }
+}, 500);
+
+function showLobby() {
+    document.getElementById('main-menu').classList.add('hidden');
+    document.getElementById('lobby-menu').classList.remove('hidden');
+}
+
+function startHost() {
+    isHost = true;
+    document.getElementById('lobby-menu').classList.add('hidden');
+    document.getElementById('host-setup').classList.remove('hidden');
+    
+    dataChannel = pc.createDataChannel("game-sync");
+    setupDataChannel();
+
+    pc.onicecandidate = e => {
+        if (!e.candidate) document.getElementById('offer-token').value = btoa(JSON.stringify(pc.localDescription));
+    };
+    pc.createOffer().then(d => pc.setLocalDescription(d));
+}
+
+function confirmHost() {
+    try {
+        const answer = JSON.parse(atob(document.getElementById('answer-token').value));
+        pc.setRemoteDescription(new RTCSessionDescription(answer));
+    } catch(e) { alert("Código inválido!"); }
+}
+
+function showJoin() {
+    document.getElementById('lobby-menu').classList.add('hidden');
+    document.getElementById('join-setup').classList.remove('hidden');
+}
+
+async function autoGenerateAnswer() {
+    const val = document.getElementById('join-offer').value;
+    if(val.length > 50) {
+        const offer = JSON.parse(atob(val));
+        pc.onicecandidate = e => {
+            if (!e.candidate) document.getElementById('join-answer').value = btoa(JSON.stringify(pc.localDescription));
+        };
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+    }
+}
+
+pc.ondatachannel = e => {
+    dataChannel = e.channel;
+    setupDataChannel();
+};
+
+function setupDataChannel() {
+    dataChannel.onopen = () => {
+        initGame();
+        // Host envia o mapa para sincronizar
+        if(isHost) {
+            setTimeout(() => {
+                sendData({ type: 'map-sync', obstacles: obstacles });
+            }, 1000);
+        }
+    };
+    dataChannel.onmessage = e => handleNetworkData(JSON.parse(e.data));
+}
+
+/**
+ * JOGO
+ */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let player = {
+    x: 150, y: 150, size: 25, speed: 4, 
+    color: '#ff0000', name: '', hp: 100,
+    shield: false, shieldCooldown: 0, shieldActive: 0
+};
+
+let opponent = { x: -500, y: -500, size: 25, color: '#00ff00', name: 'Inimigo', hp: 100, shield: false };
+let projectiles = [];
+let obstacles = [];
+let keys = {};
+let mousePos = { x: 0, y: 0 };
+
+function initGame() {
+    player.name = document.getElementById('nickname').value || 'Player';
+    player.color = document.getElementById('playerColor').value;
+    
+    // Gerar mapa apenas se for Host
+    if(isHost) {
+        const mapType = document.getElementById('mapSelect').value;
+        if(mapType === 'labirinto') {
+            obstacles = [
+                {x: 300, y: 0, w: 30, h: 400},
+                {x: 600, y: canvas.height-400, w: 30, h: 400},
+                {x: 0, y: canvas.height/2, w: 400, h: 30},
+                {x: canvas.width-400, y: 300, w: 400, h: 30}
+            ];
+        } else {
+            obstacles = [
+                {x: canvas.width/4, y: canvas.height/4, w: 100, h: 100},
+                {x: canvas.width*0.7, y: canvas.height*0.6, w: 120, h: 120}
+            ];
+        }
+    }
+
+    if(!isHost) {
+        player.x = canvas.width - 150;
+        player.y = canvas.height - 150;
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+// Inputs
+window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+window.addEventListener('mousemove', e => { mousePos.x = e.clientX; mousePos.y = e.clientY; });
+window.addEventListener('mousedown', e => {
+    if(e.button === 0) fire();
+    if(e.button === 2) activateShield();
+});
+window.addEventListener('contextmenu', e => e.preventDefault());
+
+function fire() {
+    if(player.shield || player.hp <= 0) return;
+    const angle = Math.atan2(mousePos.y - player.y, mousePos.x - player.x);
+    const p = { 
+        x: player.x, y: player.y, 
+        vx: Math.cos(angle) * 10, vy: Math.sin(angle) * 10, 
+        owner: 'me', color: player.color 
+    };
+    projectiles.push(p);
+    sendData({ type: 'fire', p });
+}
+
+function activateShield() {
+    if(player.shieldCooldown <= 0 && player.hp > 0) {
+        player.shield = true;
+        player.shieldActive = 90; // 1.5s
+        player.shieldCooldown = 400; // ~7s
+    }
+}
+
+function sendData(data) {
+    if(dataChannel && dataChannel.readyState === 'open') {
+        dataChannel.send(JSON.stringify(data));
+    }
+}
+
+function handleNetworkData(data) {
+    if(data.type === 'pos') {
+        Object.assign(opponent, data);
+    } else if(data.type === 'fire') {
+        data.p.owner = 'opponent';
+        projectiles.push(data.p);
+    } else if(data.type === 'map-sync') {
+        obstacles = data.obstacles;
+    } else if(data.type === 'hit') {
+        player.hp -= 10;
+        if(player.hp < 0) player.hp = 0;
+    }
+}
+
+function checkCollision(rect1, rect2) {
+    return rect1.x - rect1.size < rect2.x + rect2.w && rect1.x + rect1.size > rect2.x &&
+           rect1.y - rect1.size < rect2.y + rect2.h && rect1.y + rect1.size > rect2.y;
+}
+
+function update() {
+    if(player.hp <= 0) return;
+
+    let nextX = player.x;
+    let nextY = player.y;
+
+    if(keys['w']) nextY -= player.speed;
+    if(keys['s']) nextY += player.speed;
+    if(keys['a']) nextX -= player.speed;
+    if(keys['d']) nextX += player.speed;
+
+    // Colisão Simples com Bordas
+    if(nextX < 0 || nextX > canvas.width) nextX = player.x;
+    if(nextY < 0 || nextY > canvas.height) nextY = player.y;
+
+    // Colisão com obstáculos
+    obstacles.forEach(obs => {
+        if(checkCollision({x: nextX, y: player.y, size: player.size}, obs)) nextX = player.x;
+        if(checkCollision({x: player.x, y: nextY, size: player.size}, obs)) nextY = player.y;
+    });
+
+    player.x = nextX;
+    player.y = nextY;
+
+    // Shield logic
+    if(player.shieldActive > 0) {
+        player.shieldActive--;
+        if(player.shieldActive <= 0) player.shield = false;
+    }
+    if(player.shieldCooldown > 0) {
+        player.shieldCooldown--;
+        document.getElementById('status-shield').innerText = "Escudo: " + Math.ceil(player.shieldCooldown/60) + "s";
+    } else {
+        document.getElementById('status-shield').innerText = "Escudo: Pronto";
+    }
+    document.getElementById('status-hp').innerText = "Vida: " + player.hp + "%";
+
+    // Projectiles
+    for(let i = projectiles.length - 1; i >= 0; i--){
+        let p = projectiles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+
+        // Limite da tela
+        if(p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
+            projectiles.splice(i, 1);
+            continue;
+        }
+
+        // Colisão Obstáculo
+        obstacles.forEach(obs => {
+            if(p.x > obs.x && p.x < obs.x + obs.w && p.y > obs.y && p.y < obs.y + obs.h) {
+                projectiles.splice(i, 1);
+            }
+        });
+
+        // Colisão Jogador (Eu detecto se EU fui atingido e aviso o outro)
+        if(p.owner === 'opponent') {
+            const dist = Math.hypot(p.x - player.x, p.y - player.y);
+            if(dist < player.size) {
+                if(!player.shield) {
+                    player.hp -= 10;
+                    sendData({ type: 'hit' }); // Avisa o outro que ele me acertou
+                }
+                projectiles.splice(i, 1);
+            }
+        }
+    }
+
+    sendData({ 
+        type: 'pos', 
+        x: player.x, y: player.y, 
+        color: player.color, name: player.name,
+        shield: player.shield, hp: player.hp
+    });
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Chão (Grid)
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 1;
+    for(let i=0; i<canvas.width; i+=50) {
+        ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i, canvas.height); ctx.stroke();
+    }
+    for(let i=0; i<canvas.height; i+=50) {
+        ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(canvas.width, i); ctx.stroke();
+    }
+
+    // Obstáculos com Glow
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = '#000';
+    ctx.fillStyle = '#34495e';
+    obstacles.forEach(obs => {
+        ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+        ctx.strokeStyle = '#2c3e50';
+        ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+    });
+    ctx.shadowBlur = 0;
+
+    // Desenhar Players
+    drawPlayer(opponent);
+    drawPlayer(player);
+
+    // Projetis Neon
+    projectiles.forEach(p => {
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = p.color;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    ctx.shadowBlur = 0;
+}
+
+function drawPlayer(p) {
+    if(p.hp <= 0) return;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    
+    // Nome e Vida
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.name, 0, -45);
+    
+    // Barra de Vida
+    ctx.fillStyle = '#333';
+    ctx.fillRect(-30, -40, 60, 6);
+    ctx.fillStyle = p.hp > 30 ? '#2ecc71' : '#e74c3c';
+    ctx.fillRect(-30, -40, (p.hp/100)*60, 6);
+
+    // Escudo Visual
+    if(p.shield) {
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size + 12, 0, Math.PI * 2);
+        ctx.strokeStyle = '#00faff';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([5, 5]);
+        ctx.stroke();
+    }
+
+    // Corpo com Gradiente
+    let grad = ctx.createRadialGradient(0,0,5, 0,0, p.size);
+    grad.addColorStop(0, '#fff');
+    grad.addColorStop(1, p.color);
+    ctx.fillStyle = grad;
+    
+    ctx.beginPath();
+    ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    ctx.restore();
+}
+
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+// Redimensionar tela
+window.onresize = () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+};
+</script>
+</body>
+</html>
